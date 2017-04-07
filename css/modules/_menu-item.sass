@@ -1,0 +1,66 @@
+@import ../vars
+
+.menu-item, .menu-item + label
+  margin: 0
+  display: inline-block
+  vertical-align: middle
+  border: 0
+  background: transparent center no-repeat
+  padding: 0
+  width: $menu-height
+  height: $menu-height
+  color: $default-foreground
+
+  &[data-image="pixelated"] + label
+    background-image: url('../assets/pixelated.svg')
+  &[data-image='1-1']
+    background-image: url('../assets/1-1.svg')
+  &[data-image='fit-width']
+    background-image: url('../assets/fit-width.svg')
+  &[data-image='fit-height']
+    background-image: url('../assets/fit-height.svg')
+  &[data-image='center-horizontally']
+    background-image: url('../assets/center-horizontally.svg')
+  &[data-image='center-vertically']
+    background-image: url('../assets/center-vertically.svg')
+  &[data-image='zoom-out']
+    background-image: url('../assets/zoom-out.svg')
+  &[data-image='zoom-in']
+    background-image: url('../assets/zoom-in.svg')
+  &[data-image='rotate-cw']
+    background-image: url('../assets/rotate-cw.svg')
+  &[data-image='rotate-ccw']
+    background-image: url('../assets/rotate-ccw.svg')
+  &[data-image='rotate-0']
+    background-image: url('../assets/rotate-0.svg')
+  &[data-image='outline'] + label
+    background-image: url('../assets/outline.svg')
+
+.menu-item-button
+  &:active
+    background-color: $active-background
+
+  &:hover
+    background-color: $light-background
+
+.menu-item-spacer
+  content: ""
+  width: 0
+  height: $menu-height * 0.7
+  border-left: 1px solid $default-foreground
+
+.menu-item-toggle-button[type=checkbox]
+  display: none
+
+  &:checked + label
+    background-color: $active-background
+
+  & + label:hover
+    background-color: $light-background
+
+.menu-item-number-input
+  min-width: $menu-height
+  padding: 0 5px
+
+.menu-item-label
+  margin: 0 5pt

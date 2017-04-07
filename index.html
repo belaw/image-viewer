@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Image Viewer</title>
+    <style>
+        #image {
+            position: absolute;
+            z-index: -1;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+
+        #center {
+            transform: translate(-50%, -50%);
+            width: 2px;
+            height: 2px;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            background-color: rgb(0, 255, 0);
+        }
+    </style>
+    <link rel="stylesheet" href="css/normalize.css">
+    <link rel="stylesheet" href="css/index.css">
+</head>
+<body>
+<div class="floating-menu" id="menu"></div>
+<div id="main">
+    <img src="assets/loading.svg" id="image">
+    <!--<div id="center"></div>-->
+</div>
+<!--<script src="lib/jquery-3.1.1.min.js"></script>-->
+<script>
+    const mainElm = document.getElementById("main");
+    let imageElm = document.getElementById("image");
+    const menuElm = document.getElementById("menu");
+
+    let zoomElm, rotationElm;
+
+    let imageWidth, imageHeight;
+    let zoom, imagePosition, lastImagePosition, rotation;
+    zoom = 1;
+    imagePosition = {x: 0, y: 0};
+    lastImagePosition = {x: 0, y: 0};
+    let windowCenter = {x: 0, y: 0};
+    rotation = 0;
+    const zoomSpeed = 1.1;
+    const rotationSpeed = 15;
+    const minZoom = 1 / 100;
+    const maxZoom = 50000 / 100;
+    let clickFlag = false, lastClickPosition = {x: 0, y: 0};
+
+    populateMenu();
+
+    const imageUrl = getQueryParams(document.location.search)['image'];
+
+    const image = new Image();
+    image.addEventListener("load", function () {
+        imageElm.src = imageUrl;
+        imageWidth = imageElm.naturalWidth;
+        imageHeight = imageElm.naturalHeight;
+        updateScreenCenter();
+        centerImage();
+        fitImage();
+        document.title = imageWidth + "x" + imageHeight + " " + imageUrl.replace(/^.*[\\\/]/, '');
+    });
+    if (imageUrl)
+        image.src = imageUrl;
+
+    imageWidth = imageElm.naturalWidth;
+    imageHeight = imageElm.naturalHeight;
+    updateScreenCenter();
+    centerImage();
+    originalSize();
+
+    function populateMenu() {
+        createMenuToggleButton("pixelated", menuElm, "pixelated", function (evt) {
+            if (evt.target['checked']) {
+                imageElm.style.imageRendering = "pixelated";
+            } else {
+                imageElm.style.imageRendering = "auto";
+            }
+        });
+        createMenuToggleButton("outline", menuElm, "outline", function (evt) {
+            if (evt.target['checked']) {
+                imageElm.style.border = "dashed 2px #d0d0d0";
+            } else {
+                imageElm.style.border = "0";
+            }
+        });
+        createMenuSpacer(menuElm);
+        createMenuButton("1-1", menuElm, function () {
+            originalSize();
+        });
+        createMenuButton("fit-width", menuElm, function () {
+            fitImage(true);
+        });
+        createMenuButton("fit-height", menuElm, function () {
+            fitImage(false);
+        });
+        createMenuSpacer(menuElm);
+        createMenuButton("center-horizontally", menuElm, function () {
+            centerImage(true);
+        });
+        createMenuButton("center-vertically", menuElm, function () {
+            centerImage(false, true);
+        });
+        createMenuSpacer(menuElm);
+        createMenuButton("rotate-ccw", menuElm, function () {
+            setImageRotation(rotation - rotationSpeed);
+        });
+        createMenuButton("rotate-0", menuElm, function () {
+            resetRotation();
+        });
+        createMenuButton("rotate-cw", menuElm, function () {
+            setImageRotation(rotation + rotationSpeed);
+        });
+        rotationElm = createMenuNumberInput(menuElm, "°", null, null, 0, function () {
+            setImageRotation(parseFloat(rotationElm.value));
+        });
+        createMenuSpacer(menuElm);
+        createMenuButton("zoom-out", menuElm, function () {
+            zoomOut();
+        });
+        createMenuButton("zoom-in", menuElm, function () {
+            zoomIn();
+        });
+        zoomElm = createMenuNumberInput(menuElm, "%", minZoom * 100, maxZoom * 100, 100, function (e) {
+            setZoom(zoomElm.value / 100);
+        });
+    }
+
+    window.addEventListener("resize", function () {
+        updateScreenCenter();
+    });
+
+    function updateScreenCenter() {
+        windowCenter.x = window.innerWidth / 2;
+        windowCenter.y = window.innerHeight / 2;
+        setImagePosition(imagePosition.x, imagePosition.y);
+    }
+
+    function fitImage(toWidth) {
+        const windowWidth = window.innerWidth;
+        const windowHeight = window.innerHeight;
+
+        const imageAspectRatio = imageWidth / imageHeight;
+        const windowAspectRatio = windowWidth / windowHeight;
+
+        if (toWidth) {
+            setImageSize(windowWidth, windowWidth / imageAspectRatio);
+            zoom = windowWidth / imageWidth;
+        } else if (!toWidth) {
+            setImageSize(windowHeight * imageAspectRatio, windowHeight);
+            zoom = windowHeight / imageHeight;
+        } else if (imageAspectRatio > windowAspectRatio) {
+            setImageSize(windowWidth, windowWidth / imageAspectRatio);
+            zoom = windowWidth / imageWidth;
+        } else if (imageAspectRatio < windowAspectRatio) {
+            setImageSize(windowHeight * imageAspectRatio, windowHeight);
+            zoom = windowHeight / imageHeight;
+        }
+
+        centerImage();
+        updateStatus()
+    }
+
+    function setImageRotation(angle) {
+        const oldAngle = rotation;
+        rotation = angle;
+        imageElm.style.transform = "translate(-50%, -50%) rotate(" + rotation + "deg)";
+        rotationElm.value = rotation;
+        const angleDeltaRad = (angle - oldAngle) * (Math.PI / 180);
+        const s = Math.sin(angleDeltaRad);
+        const c = Math.cos(angleDeltaRad);
+        setImagePosition(
+            imagePosition.x * c - imagePosition.y * s,
+            imagePosition.x * s + imagePosition.y * c
+        );
+    }
+
+    function updateStatus() {
+        zoomElm.value = (zoom * 100).toFixed();
+    }
+
+    function centerImage(h, v) {
+        if (h)
+            setImagePosition(0, imagePosition.y);
+        else if (v)
+            setImagePosition(imagePosition.x, 0);
+        else
+            setImagePosition(0, 0);
+    }
+
+    function setImageSize(w, h) {
+        imageElm.width = w;
+        imageElm.height = h;
+    }
+
+    window.addEventListener("mousewheel", function (evt) {
+        evt.preventDefault();
+
+        if (evt.deltaY < 0) {
+            zoomIn({x: evt.x, y: evt.y});
+        } else {
+            zoomOut({x: evt.x, y: evt.y});
+        }
+    });
+
+    function resetRotation() {
+        setImageRotation(0);
+    }
+
+    function setZoom(newZoom) {
+        zoom = newZoom;
+        updateStatus();
+        setImageSize(imageWidth * newZoom, imageHeight * newZoom);
+    }
+
+    function zoomOut(origin) {
+        if (!origin) {
+            origin = {x: 0, y: 0};
+        } else {
+            origin.x -= windowCenter.x;
+            origin.y -= windowCenter.y;
+        }
+
+        let newZoom = zoom / zoomSpeed;
+
+        if (newZoom < minZoom)
+            newZoom = minZoom;
+
+        zoomTo(origin, newZoom);
+    }
+
+    function zoomIn(origin) {
+        if (!origin) {
+            origin = {x: 0, y: 0};
+        } else {
+            origin.x -= windowCenter.x;
+            origin.y -= windowCenter.y;
+        }
+
+        let newZoom = zoom * zoomSpeed;
+
+        if (newZoom > maxZoom)
+            newZoom = maxZoom;
+
+        zoomTo(origin, newZoom);
+    }
+
+    function zoomTo(coordinates, newZoom) {
+        let zoomAmount = newZoom / zoom;
+
+        const distanceFromImageCenter = {
+            x: coordinates.x - imagePosition.x,
+            y: coordinates.y - imagePosition.y
+        };
+
+        const originRectifier = {
+            x: distanceFromImageCenter.x - distanceFromImageCenter.x * zoomAmount,
+            y: distanceFromImageCenter.y - distanceFromImageCenter.y * zoomAmount
+        };
+
+        setZoom(newZoom);
+        setImagePosition(
+            imagePosition.x + originRectifier.x,
+            imagePosition.y + originRectifier.y
+        );
+    }
+
+    function originalSize() {
+        zoomTo({x: 0, y: 0}, 1);
+    }
+
+    function setImagePosition(x, y) {
+        imagePosition.x = x;
+        imagePosition.y = y;
+        imageElm.style.left = windowCenter.x + x + "px";
+        imageElm.style.top = windowCenter.y + y + "px";
+    }
+
+    mainElm.addEventListener("mousedown", function (evt) {
+        if (evt.target.parentNode !== menuElm || evt.target !== menuElm) {
+            evt.preventDefault();
+            clickFlag = true;
+            lastClickPosition.x = evt.x;
+            lastClickPosition.y = evt.y;
+            lastImagePosition.x = imagePosition.x;
+            lastImagePosition.y = imagePosition.y;
+        }
+    });
+
+    window.addEventListener("mouseup", function (evt) {
+        clickFlag = false;
+    });
+
+    window.addEventListener("mousemove", function (evt) {
+        if (clickFlag) {
+            const deltaMouse = {
+                x: (evt.x - lastClickPosition.x),
+                y: (evt.y - lastClickPosition.y)
+            };
+            setImagePosition(lastImagePosition.x + deltaMouse.x, lastImagePosition.y + deltaMouse.y);
+        }
+    });
+
+    const moveSpeed = 20;
+    window.addEventListener("keydown", function (evt) {
+        console.log(evt.keyCode);
+        if (evt.keyCode === 37) {
+            setImagePosition(imagePosition.x + moveSpeed, imagePosition.y);
+        }
+        if (evt.keyCode === 38) {
+            setImagePosition(imagePosition.x, imagePosition.y + moveSpeed);
+        }
+        if (evt.keyCode === 39) {
+            setImagePosition(imagePosition.x - moveSpeed, imagePosition.y);
+        }
+        if (evt.keyCode === 40) {
+            setImagePosition(imagePosition.x, imagePosition.y - moveSpeed);
+        }
+    });
+
+    function getQueryParams(qs) {
+        qs = qs.split('+').join(' ');
+
+        let params = {},
+            tokens,
+            re = /[?&]?([^=]+)=([^&]*)/g;
+
+        while (tokens = re.exec(qs)) {
+            params[decodeURIComponent(tokens[1])] = decodeURIComponent(tokens[2]);
+        }
+
+        return params;
+    }
+
+    function createMenuButton(image, parent, onclick) {
+        let button = createElement("button", parent, "menu-item menu-item-button");
+        button.dataset.image = image;
+        if (onclick)
+            button.addEventListener("click", onclick)
+        return button;
+    }
+
+    function createMenuToggleButton(image, parent, id, onchange) {
+        let button = createElement("input", parent, "menu-item menu-item-toggle-button", id);
+        button.type = "checkbox";
+        button.dataset.image = image;
+        let label = createElement("label", parent);
+        label.htmlFor = id;
+        if (onchange)
+            button.addEventListener("change", onchange);
+        return button;
+    }
+
+    function createMenuNumberInput(parent, unit, min, max, value, onchange, id) {
+        let input = createElement("input", parent, "menu-item menu-item-number-input", id);
+        if (unit) {
+            let unitElm = createElement("span", parent);
+            unitElm.innerText = unit;
+            unitElm.className = "menu-item-label"
+        }
+        input.type = "number";
+        input.min = min;
+        input.max = max;
+        input.value = value;
+        input.contentEditable = true;
+        if (onchange)
+            input.addEventListener("change", onchange);
+        return input;
+    }
+
+    function createMenuSpacer(parent) {
+        return createElement("span", parent, "menu-item menu-item-spacer");
+    }
+
+    function createElement(tag, parent, className, id) {
+        let element = document.createElement(tag);
+        if (id)
+            element.id = id;
+        if (className)
+            element.className = className;
+        if (parent)
+            parent.appendChild(element);
+        return element;
+    }
+</script>
+</body>
+</html>
