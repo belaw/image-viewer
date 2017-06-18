@@ -41,7 +41,6 @@
 
     let imageWidth, imageHeight;
     let zoom, imagePosition, lastImagePosition, rotation;
-    zoom = 1;
     imagePosition = {x: 0, y: 0};
     lastImagePosition = {x: 0, y: 0};
     let windowCenter = {x: 0, y: 0};
@@ -50,11 +49,13 @@
     const rotationSpeed = 15;
     const minZoom = 1 / 100;
     const maxZoom = 50000 / 100;
+    const queryParams = getQueryParams(document.location.search);
     let clickFlag = false, lastClickPosition = {x: 0, y: 0};
+    let imageLoaded = false;
 
     populateMenu();
 
-    const imageUrl = getQueryParams(document.location.search)['image'];
+    const imageUrl = queryParams['image'].split('%').join('%25');
 
     const image = new Image();
     image.addEventListener("load", function () {
@@ -64,7 +65,21 @@
         updateScreenCenter();
         centerImage();
         fitImage();
+
+        if (queryParams.hasOwnProperty("x") && queryParams.hasOwnProperty("y"))
+            setImagePosition(parseFloat(queryParams['x']), parseFloat(queryParams['y']));
+        if (queryParams.hasOwnProperty("zoom"))
+            setZoom(parseFloat(queryParams['zoom']));
+        if (queryParams.hasOwnProperty("pixelated"))
+            if (queryParams['pixelated'] === "true") {
+                setPixelated(true);
+                document.getElementById("pixelated").checked = true;
+            } else {
+                setPixelated(false);
+            }
+
         document.title = imageWidth + "x" + imageHeight + " " + imageUrl.replace(/^.*[\\\/]/, '');
+        imageLoaded = true;
     });
     if (imageUrl)
         image.src = imageUrl;
@@ -75,13 +90,39 @@
     centerImage();
     originalSize();
 
+    // Add / Update a key-value pair in the URL query parameters
+    function updateUrlParameter(uri, key, value) {
+        // remove the hash part before operating on the uri
+        let i = uri.indexOf('#');
+        let hash = i === -1 ? '' : uri.substr(i);
+        uri = i === -1 ? uri : uri.substr(0, i);
+
+        let re = new RegExp("([?&])" + key + "=.*?(&|$)", "i");
+        let separator = uri.indexOf('?') !== -1 ? "&" : "?";
+        if (uri.match(re)) {
+            if (value === "")
+                uri = uri.replace(re, "");
+            else
+                uri = uri.replace(re, '$1' + key + "=" + value + '$2');
+        } else {
+            if (value !== "")
+                uri = uri + separator + key + "=" + value;
+        }
+        return uri + hash;  // finally append the hash as well
+    }
+
     function populateMenu() {
-        createMenuToggleButton("pixelated", menuElm, "pixelated", function (evt) {
-            if (evt.target['checked']) {
-                imageElm.style.imageRendering = "pixelated";
+        createMenuButton("full-screen", menuElm, function () {
+            if (!document.webkitFullscreenElement) {
+                document.documentElement.webkitRequestFullscreen();
             } else {
-                imageElm.style.imageRendering = "auto";
+                if (document.webkitExitFullscreen) {
+                    document.webkitExitFullscreen();
+                }
             }
+        });
+        createMenuToggleButton("pixelated", menuElm, "pixelated", function (evt) {
+            setPixelated(evt.target['checked']);
         });
         createMenuToggleButton("outline", menuElm, "outline", function (evt) {
             if (evt.target['checked']) {
@@ -128,7 +169,8 @@
             zoomIn();
         });
         zoomElm = createMenuNumberInput(menuElm, "%", minZoom * 100, maxZoom * 100, 100, function (e) {
-            setZoom(zoomElm.value / 100);
+            //setZoom(zoomElm.value / 100);
+            zoomTo({x: 0, y: 0}, parseFloat(this.value) / 100);
         });
     }
 
@@ -140,6 +182,16 @@
         windowCenter.x = window.innerWidth / 2;
         windowCenter.y = window.innerHeight / 2;
         setImagePosition(imagePosition.x, imagePosition.y);
+    }
+
+    function setPixelated(value) {
+        if (value) {
+            imageElm.style.imageRendering = "pixelated";
+            updateQueryParam("pixelated", "true");
+        } else {
+            imageElm.style.imageRendering = "auto";
+            updateQueryParam("pixelated", "false");
+        }
     }
 
     function fitImage(toWidth) {
@@ -164,7 +216,12 @@
         }
 
         centerImage();
-        updateStatus()
+        updateStatus();
+    }
+
+    function updateQueryParam(param, value) {
+        if (imageLoaded && !clickFlag)
+            history.replaceState({}, document.title, updateUrlParameter(document.location.href, param, value));
     }
 
     function setImageRotation(angle) {
@@ -179,6 +236,7 @@
             imagePosition.x * c - imagePosition.y * s,
             imagePosition.x * s + imagePosition.y * c
         );
+        updateQueryParam("r", rotation);
     }
 
     function updateStatus() {
@@ -217,6 +275,7 @@
         zoom = newZoom;
         updateStatus();
         setImageSize(imageWidth * newZoom, imageHeight * newZoom);
+        updateQueryParam("zoom", zoom);
     }
 
     function zoomOut(origin) {
@@ -236,6 +295,7 @@
     }
 
     function zoomIn(origin) {
+        console.log(origin);
         if (!origin) {
             origin = {x: 0, y: 0};
         } else {
@@ -280,6 +340,8 @@
         imagePosition.y = y;
         imageElm.style.left = windowCenter.x + x + "px";
         imageElm.style.top = windowCenter.y + y + "px";
+        updateQueryParam("x", imagePosition.x);
+        updateQueryParam("y", imagePosition.y);
     }
 
     mainElm.addEventListener("mousedown", function (evt) {
@@ -295,6 +357,8 @@
 
     window.addEventListener("mouseup", function (evt) {
         clickFlag = false;
+        updateQueryParam("x", imagePosition.x);
+        updateQueryParam("y", imagePosition.y);
     });
 
     window.addEventListener("mousemove", function (evt) {
@@ -308,19 +372,25 @@
     });
 
     const moveSpeed = 20;
+
     window.addEventListener("keydown", function (evt) {
-        console.log(evt.keyCode);
-        if (evt.keyCode === 37) {
-            setImagePosition(imagePosition.x + moveSpeed, imagePosition.y);
+        if (evt.target.tagName !== "INPUT") {
+            if (evt.keyCode === 37) { // left
+                setImagePosition(imagePosition.x + moveSpeed, imagePosition.y);
+            }
+            if (evt.keyCode === 38) { // up
+                setImagePosition(imagePosition.x, imagePosition.y + moveSpeed);
+            }
+            if (evt.keyCode === 39) { // right
+                setImagePosition(imagePosition.x - moveSpeed, imagePosition.y);
+            }
+            if (evt.keyCode === 40) { // down
+                setImagePosition(imagePosition.x, imagePosition.y - moveSpeed);
+            }
         }
-        if (evt.keyCode === 38) {
-            setImagePosition(imagePosition.x, imagePosition.y + moveSpeed);
-        }
-        if (evt.keyCode === 39) {
-            setImagePosition(imagePosition.x - moveSpeed, imagePosition.y);
-        }
-        if (evt.keyCode === 40) {
-            setImagePosition(imagePosition.x, imagePosition.y - moveSpeed);
+
+        if (evt.keyCode === 77) { // m
+            menuElm.style.display = menuElm.style.display === "none" ? "block" : "none";
         }
     });
 

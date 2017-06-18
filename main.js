@@ -20,6 +20,8 @@ function createWindow() {
 
     win.maximize();
 
+    //win.openDevTools();
+
     win.once('ready-to-show', () => {
         win.show()
     });
@@ -30,7 +32,7 @@ function createWindow() {
         protocol: 'file:',
         slashes: true,
         query: {
-            image: process.argv[2]
+            image: process.argv[1]
         }
     }));
 
