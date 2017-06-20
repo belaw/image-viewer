@@ -11,16 +11,6 @@
             left: 50%;
             transform: translate(-50%, -50%);
         }
-
-        #center {
-            transform: translate(-50%, -50%);
-            width: 2px;
-            height: 2px;
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            background-color: rgb(0, 255, 0);
-        }
     </style>
     <link rel="stylesheet" href="css/normalize.css">
     <link rel="stylesheet" href="css/index.css">
@@ -31,26 +21,44 @@
     <img src="assets/loading.svg" id="image">
     <!--<div id="center"></div>-->
 </div>
-<!--<script src="lib/jquery-3.1.1.min.js"></script>-->
 <script>
     const mainElm = document.getElementById("main");
     let imageElm = document.getElementById("image");
     const menuElm = document.getElementById("menu");
 
-    let zoomElm, rotationElm;
+    let zoomElm, rotationElm, nearestNeighborElm, outlineElm;
 
-    let imageWidth, imageHeight;
-    let zoom, imagePosition, lastImagePosition, rotation;
-    imagePosition = {x: 0, y: 0};
-    lastImagePosition = {x: 0, y: 0};
+    let lastPosition = {x: 0, y: 0};
     let windowCenter = {x: 0, y: 0};
-    rotation = 0;
-    const zoomSpeed = 1.1;
-    const rotationSpeed = 15;
-    const minZoom = 1 / 100;
-    const maxZoom = 50000 / 100;
+
+    const defaultViewParams = {
+        position: {x: 0, y: 0},
+        dimensions: {x: 100, y: 100},
+        angle: 0,
+        scale: 1,
+        nearestNeighbor: false,
+        outline: false
+    };
+
+    let viewParams = {
+        position: {x: defaultViewParams.position.x, y: defaultViewParams.position.y},
+        dimensions: {x: defaultViewParams.dimensions.x, y: defaultViewParams.dimensions.y},
+        angle: defaultViewParams.angle,
+        scale: defaultViewParams.scale,
+        nearestNeighbor: defaultViewParams.nearestNeighbor,
+        outline: defaultViewParams.outline
+    };
+
+    const settings = {
+        zoomStep: 1.1,
+        rotationStep: 15,
+        minScale: 0.01,
+        maxScale: 500
+    };
+
     const queryParams = getQueryParams(document.location.search);
-    let clickFlag = false, lastClickPosition = {x: 0, y: 0};
+    let clickFlag = false;
+    let lastClickPosition = {x: 0, y: 0};
     let imageLoaded = false;
 
     populateMenu();
@@ -60,56 +68,63 @@
     const image = new Image();
     image.addEventListener("load", function () {
         imageElm.src = imageUrl;
-        imageWidth = imageElm.naturalWidth;
-        imageHeight = imageElm.naturalHeight;
+        viewParams.dimensions.x = imageElm.naturalWidth;
+        viewParams.dimensions.y = imageElm.naturalHeight;
         updateScreenCenter();
-        centerImage();
-        fitImage();
+        setScale(defaultViewParams.scale);
+        setImagePosition(defaultViewParams.position.x, defaultViewParams.position.y);
+        if (
+            !queryParams.hasOwnProperty("x") &&
+            !queryParams.hasOwnProperty("y") &&
+            !queryParams.hasOwnProperty("angle") &&
+            !queryParams.hasOwnProperty("scale") &&
+            !queryParams.hasOwnProperty("nearestNeighbor") &&
+            !queryParams.hasOwnProperty("outline")
+        ) {
+            centerImage();
+            fitImage();
+        }
+
+        if (queryParams.hasOwnProperty("angle"))
+            setImageRotation(parseFloat(queryParams['angle']));
 
         if (queryParams.hasOwnProperty("x") && queryParams.hasOwnProperty("y"))
             setImagePosition(parseFloat(queryParams['x']), parseFloat(queryParams['y']));
-        if (queryParams.hasOwnProperty("zoom"))
-            setZoom(parseFloat(queryParams['zoom']));
-        if (queryParams.hasOwnProperty("pixelated"))
-            if (queryParams['pixelated'] === "true") {
-                setPixelated(true);
-                document.getElementById("pixelated").checked = true;
+        else if (queryParams.hasOwnProperty("x"))
+            setImagePosition(parseFloat(queryParams['x']), 0);
+        else if (queryParams.hasOwnProperty("y"))
+            setImagePosition(0, parseFloat(queryParams['y']));
+
+        if (queryParams.hasOwnProperty("scale"))
+            setScale(parseFloat(queryParams['scale']));
+
+        if (queryParams.hasOwnProperty("nearestNeighbor"))
+            if (queryParams['nearestNeighbor'] === "true") {
+                setNearestNeighbor(true);
+                nearestNeighborElm.checked = true;
             } else {
-                setPixelated(false);
+                setNearestNeighbor(false);
             }
 
-        document.title = imageWidth + "x" + imageHeight + " " + imageUrl.replace(/^.*[\\\/]/, '');
+        if (queryParams.hasOwnProperty("outline"))
+            if (queryParams['outline'] === "true") {
+                setOutline(true);
+                outlineElm.checked = true;
+            } else {
+                setOutline(false);
+            }
+
+        document.title = viewParams.dimensions.x + "x" + viewParams.dimensions.y + " " + imageUrl.replace(/^.*[\\\/]/, '');
         imageLoaded = true;
     });
     if (imageUrl)
         image.src = imageUrl;
 
-    imageWidth = imageElm.naturalWidth;
-    imageHeight = imageElm.naturalHeight;
+    viewParams.dimensions.x = imageElm.naturalWidth;
+    viewParams.dimensions.y = imageElm.naturalHeight;
     updateScreenCenter();
     centerImage();
     originalSize();
-
-    // Add / Update a key-value pair in the URL query parameters
-    function updateUrlParameter(uri, key, value) {
-        // remove the hash part before operating on the uri
-        let i = uri.indexOf('#');
-        let hash = i === -1 ? '' : uri.substr(i);
-        uri = i === -1 ? uri : uri.substr(0, i);
-
-        let re = new RegExp("([?&])" + key + "=.*?(&|$)", "i");
-        let separator = uri.indexOf('?') !== -1 ? "&" : "?";
-        if (uri.match(re)) {
-            if (value === "")
-                uri = uri.replace(re, "");
-            else
-                uri = uri.replace(re, '$1' + key + "=" + value + '$2');
-        } else {
-            if (value !== "")
-                uri = uri + separator + key + "=" + value;
-        }
-        return uri + hash;  // finally append the hash as well
-    }
 
     function populateMenu() {
         createMenuButton("full-screen", menuElm, function () {
@@ -121,15 +136,11 @@
                 }
             }
         });
-        createMenuToggleButton("pixelated", menuElm, "pixelated", function (evt) {
-            setPixelated(evt.target['checked']);
+        nearestNeighborElm = createMenuToggleButton("pixelated", menuElm, "nearestNeighbor", function (evt) {
+            setNearestNeighbor(evt.target['checked']);
         });
-        createMenuToggleButton("outline", menuElm, "outline", function (evt) {
-            if (evt.target['checked']) {
-                imageElm.style.border = "dashed 2px #d0d0d0";
-            } else {
-                imageElm.style.border = "0";
-            }
+        outlineElm = createMenuToggleButton("outline", menuElm, "outline", function (evt) {
+            setOutline(evt.target['checked']);
         });
         createMenuSpacer(menuElm);
         createMenuButton("1-1", menuElm, function () {
@@ -150,13 +161,13 @@
         });
         createMenuSpacer(menuElm);
         createMenuButton("rotate-ccw", menuElm, function () {
-            setImageRotation(rotation - rotationSpeed);
+            setImageRotation(viewParams.angle - settings.rotationStep);
         });
         createMenuButton("rotate-0", menuElm, function () {
             resetRotation();
         });
         createMenuButton("rotate-cw", menuElm, function () {
-            setImageRotation(rotation + rotationSpeed);
+            setImageRotation(viewParams.angle + settings.rotationStep);
         });
         rotationElm = createMenuNumberInput(menuElm, "°", null, null, 0, function () {
             setImageRotation(parseFloat(rotationElm.value));
@@ -168,8 +179,7 @@
         createMenuButton("zoom-in", menuElm, function () {
             zoomIn();
         });
-        zoomElm = createMenuNumberInput(menuElm, "%", minZoom * 100, maxZoom * 100, 100, function (e) {
-            //setZoom(zoomElm.value / 100);
+        zoomElm = createMenuNumberInput(menuElm, "%", settings.minScale * 100, settings.maxScale * 100, 100, function () {
             zoomTo({x: 0, y: 0}, parseFloat(this.value) / 100);
         });
     }
@@ -181,73 +191,98 @@
     function updateScreenCenter() {
         windowCenter.x = window.innerWidth / 2;
         windowCenter.y = window.innerHeight / 2;
-        setImagePosition(imagePosition.x, imagePosition.y);
+        setImagePosition(viewParams.position.x, viewParams.position.y);
     }
 
-    function setPixelated(value) {
+    function setNearestNeighbor(value) {
         if (value) {
             imageElm.style.imageRendering = "pixelated";
-            updateQueryParam("pixelated", "true");
+            viewParams.nearestNeighbor = true;
         } else {
             imageElm.style.imageRendering = "auto";
-            updateQueryParam("pixelated", "false");
+            viewParams.nearestNeighbor = false;
         }
+        updateQueryParams();
+    }
+
+    function setOutline(value) {
+        if (value) {
+            imageElm.style.border = "dashed 2px #d0d0d0";
+            viewParams.outline = true;
+        } else {
+            imageElm.style.border = "0";
+            viewParams.outline = false;
+        }
+        updateQueryParams();
     }
 
     function fitImage(toWidth) {
         const windowWidth = window.innerWidth;
         const windowHeight = window.innerHeight;
 
-        const imageAspectRatio = imageWidth / imageHeight;
+        const imageAspectRatio = viewParams.dimensions.x / viewParams.dimensions.y;
         const windowAspectRatio = windowWidth / windowHeight;
 
         if (toWidth) {
             setImageSize(windowWidth, windowWidth / imageAspectRatio);
-            zoom = windowWidth / imageWidth;
+            viewParams.scale = windowWidth / viewParams.dimensions.x;
         } else if (!toWidth) {
             setImageSize(windowHeight * imageAspectRatio, windowHeight);
-            zoom = windowHeight / imageHeight;
+            viewParams.scale = windowHeight / viewParams.dimensions.y;
         } else if (imageAspectRatio > windowAspectRatio) {
             setImageSize(windowWidth, windowWidth / imageAspectRatio);
-            zoom = windowWidth / imageWidth;
+            viewParams.scale = windowWidth / viewParams.dimensions.x;
         } else if (imageAspectRatio < windowAspectRatio) {
             setImageSize(windowHeight * imageAspectRatio, windowHeight);
-            zoom = windowHeight / imageHeight;
+            viewParams.scale = windowHeight / viewParams.dimensions.y;
         }
 
         centerImage();
         updateStatus();
     }
 
-    function updateQueryParam(param, value) {
+    function updateQueryParams() {
+        let queryString = "?image=" + imageUrl;
+        if (viewParams.position.x !== defaultViewParams.position.x)
+            queryString += "&x=" + Math.round(viewParams.position.x).toString();
+        if (viewParams.position.y !== defaultViewParams.position.y)
+            queryString += "&y=" + Math.round(viewParams.position.y).toString();
+        if (viewParams.angle !== defaultViewParams.angle)
+            queryString += "&angle=" + viewParams.angle.toString();
+        if (viewParams.scale !== defaultViewParams.scale)
+            queryString += "&scale=" + viewParams.scale.toString();
+        if (viewParams.nearestNeighbor !== defaultViewParams.nearestNeighbor)
+            queryString += "&nearestNeighbor=" + viewParams.nearestNeighbor.toString();
+        if (viewParams.outline !== defaultViewParams.outline)
+            queryString += "&outline=" + viewParams.outline.toString();
         if (imageLoaded && !clickFlag)
-            history.replaceState({}, document.title, updateUrlParameter(document.location.href, param, value));
+            history.replaceState(null, "", document.location.href.split('?')[0] + queryString);
     }
 
     function setImageRotation(angle) {
-        const oldAngle = rotation;
-        rotation = angle;
-        imageElm.style.transform = "translate(-50%, -50%) rotate(" + rotation + "deg)";
-        rotationElm.value = rotation;
+        const oldAngle = viewParams.angle;
+        viewParams.angle = angle;
+        imageElm.style.transform = "translate(-50%, -50%) rotate(" + viewParams.angle + "deg)";
+        rotationElm.value = viewParams.angle;
         const angleDeltaRad = (angle - oldAngle) * (Math.PI / 180);
         const s = Math.sin(angleDeltaRad);
         const c = Math.cos(angleDeltaRad);
         setImagePosition(
-            imagePosition.x * c - imagePosition.y * s,
-            imagePosition.x * s + imagePosition.y * c
+            viewParams.position.x * c - viewParams.position.y * s,
+            viewParams.position.x * s + viewParams.position.y * c
         );
-        updateQueryParam("r", rotation);
+        updateQueryParams();
     }
 
     function updateStatus() {
-        zoomElm.value = (zoom * 100).toFixed();
+        zoomElm.value = (viewParams.scale * 100).toFixed();
     }
 
     function centerImage(h, v) {
         if (h)
-            setImagePosition(0, imagePosition.y);
+            setImagePosition(0, viewParams.position.y);
         else if (v)
-            setImagePosition(imagePosition.x, 0);
+            setImagePosition(viewParams.position.x, 0);
         else
             setImagePosition(0, 0);
     }
@@ -271,11 +306,11 @@
         setImageRotation(0);
     }
 
-    function setZoom(newZoom) {
-        zoom = newZoom;
+    function setScale(newScale) {
+        viewParams.scale = newScale;
         updateStatus();
-        setImageSize(imageWidth * newZoom, imageHeight * newZoom);
-        updateQueryParam("zoom", zoom);
+        setImageSize(viewParams.dimensions.x * newScale, viewParams.dimensions.y * newScale);
+        updateQueryParams();
     }
 
     function zoomOut(origin) {
@@ -286,16 +321,15 @@
             origin.y -= windowCenter.y;
         }
 
-        let newZoom = zoom / zoomSpeed;
+        let newScale = viewParams.scale / settings.zoomStep;
 
-        if (newZoom < minZoom)
-            newZoom = minZoom;
+        if (newScale < settings.minScale)
+            newScale = settings.minScale;
 
-        zoomTo(origin, newZoom);
+        zoomTo(origin, newScale);
     }
 
     function zoomIn(origin) {
-        console.log(origin);
         if (!origin) {
             origin = {x: 0, y: 0};
         } else {
@@ -303,20 +337,20 @@
             origin.y -= windowCenter.y;
         }
 
-        let newZoom = zoom * zoomSpeed;
+        let newScale = viewParams.scale * settings.zoomStep;
 
-        if (newZoom > maxZoom)
-            newZoom = maxZoom;
+        if (newScale > settings.maxScale)
+            newScale = settings.maxScale;
 
-        zoomTo(origin, newZoom);
+        zoomTo(origin, newScale);
     }
 
-    function zoomTo(coordinates, newZoom) {
-        let zoomAmount = newZoom / zoom;
+    function zoomTo(coordinates, newScale) {
+        let zoomAmount = newScale / viewParams.scale;
 
         const distanceFromImageCenter = {
-            x: coordinates.x - imagePosition.x,
-            y: coordinates.y - imagePosition.y
+            x: coordinates.x - viewParams.position.x,
+            y: coordinates.y - viewParams.position.y
         };
 
         const originRectifier = {
@@ -324,10 +358,10 @@
             y: distanceFromImageCenter.y - distanceFromImageCenter.y * zoomAmount
         };
 
-        setZoom(newZoom);
+        setScale(newScale);
         setImagePosition(
-            imagePosition.x + originRectifier.x,
-            imagePosition.y + originRectifier.y
+            viewParams.position.x + originRectifier.x,
+            viewParams.position.y + originRectifier.y
         );
     }
 
@@ -336,38 +370,36 @@
     }
 
     function setImagePosition(x, y) {
-        imagePosition.x = x;
-        imagePosition.y = y;
+        viewParams.position.x = x;
+        viewParams.position.y = y;
         imageElm.style.left = windowCenter.x + x + "px";
         imageElm.style.top = windowCenter.y + y + "px";
-        updateQueryParam("x", imagePosition.x);
-        updateQueryParam("y", imagePosition.y);
+        updateQueryParams();
     }
 
     mainElm.addEventListener("mousedown", function (evt) {
         if (evt.target.parentNode !== menuElm || evt.target !== menuElm) {
-            evt.preventDefault();
             clickFlag = true;
             lastClickPosition.x = evt.x;
             lastClickPosition.y = evt.y;
-            lastImagePosition.x = imagePosition.x;
-            lastImagePosition.y = imagePosition.y;
+            lastPosition.x = viewParams.position.x;
+            lastPosition.y = viewParams.position.y;
         }
     });
 
     window.addEventListener("mouseup", function (evt) {
         clickFlag = false;
-        updateQueryParam("x", imagePosition.x);
-        updateQueryParam("y", imagePosition.y);
+        updateQueryParams();
     });
 
     window.addEventListener("mousemove", function (evt) {
+        evt.preventDefault();
         if (clickFlag) {
             const deltaMouse = {
                 x: (evt.x - lastClickPosition.x),
                 y: (evt.y - lastClickPosition.y)
             };
-            setImagePosition(lastImagePosition.x + deltaMouse.x, lastImagePosition.y + deltaMouse.y);
+            setImagePosition(lastPosition.x + deltaMouse.x, lastPosition.y + deltaMouse.y);
         }
     });
 
@@ -376,16 +408,16 @@
     window.addEventListener("keydown", function (evt) {
         if (evt.target.tagName !== "INPUT") {
             if (evt.keyCode === 37) { // left
-                setImagePosition(imagePosition.x + moveSpeed, imagePosition.y);
+                setImagePosition(viewParams.position.x + moveSpeed, viewParams.position.y);
             }
             if (evt.keyCode === 38) { // up
-                setImagePosition(imagePosition.x, imagePosition.y + moveSpeed);
+                setImagePosition(viewParams.position.x, viewParams.position.y + moveSpeed);
             }
             if (evt.keyCode === 39) { // right
-                setImagePosition(imagePosition.x - moveSpeed, imagePosition.y);
+                setImagePosition(viewParams.position.x - moveSpeed, viewParams.position.y);
             }
             if (evt.keyCode === 40) { // down
-                setImagePosition(imagePosition.x, imagePosition.y - moveSpeed);
+                setImagePosition(viewParams.position.x, viewParams.position.y - moveSpeed);
             }
         }
 
