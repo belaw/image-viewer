@@ -22,10 +22,6 @@ function createWindow() {
 
     //win.openDevTools();
 
-    win.once('ready-to-show', () => {
-        win.show()
-    });
-
     // and load the index.html of the app.
     win.loadURL(url.format({
         pathname: path.join(__dirname, 'index.html'),
