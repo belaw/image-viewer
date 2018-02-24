@@ -147,10 +147,10 @@
             originalSize();
         });
         createMenuButton("fit-width", menuElm, function () {
-            fitImage(true);
+            fitImageToWidth();
         });
         createMenuButton("fit-height", menuElm, function () {
-            fitImage(false);
+            fitImageToHeight();
         });
         createMenuSpacer(menuElm);
         createMenuButton("center-horizontally", menuElm, function () {
@@ -216,26 +216,39 @@
         updateQueryParams();
     }
 
-    function fitImage(toWidth) {
+    function fitImage() {
         const windowWidth = window.innerWidth;
         const windowHeight = window.innerHeight;
 
         const imageAspectRatio = viewParams.dimensions.x / viewParams.dimensions.y;
         const windowAspectRatio = windowWidth / windowHeight;
 
-        if (toWidth) {
-            setImageSize(windowWidth, windowWidth / imageAspectRatio);
-            viewParams.scale = windowWidth / viewParams.dimensions.x;
-        } else if (!toWidth) {
-            setImageSize(windowHeight * imageAspectRatio, windowHeight);
-            viewParams.scale = windowHeight / viewParams.dimensions.y;
-        } else if (imageAspectRatio > windowAspectRatio) {
-            setImageSize(windowWidth, windowWidth / imageAspectRatio);
-            viewParams.scale = windowWidth / viewParams.dimensions.x;
-        } else if (imageAspectRatio < windowAspectRatio) {
-            setImageSize(windowHeight * imageAspectRatio, windowHeight);
-            viewParams.scale = windowHeight / viewParams.dimensions.y;
+        if (imageAspectRatio > windowAspectRatio) { // fit to width
+            fitImageToWidth();
+        } else if (imageAspectRatio < windowAspectRatio) { // fit to height
+            fitImageToHeight();
         }
+    }
+
+    function fitImageToWidth() {
+        const windowWidth = window.innerWidth;
+
+        const imageAspectRatio = viewParams.dimensions.x / viewParams.dimensions.y;
+
+        setImageSize(windowWidth, windowWidth / imageAspectRatio);
+        viewParams.scale = windowWidth / viewParams.dimensions.x;
+
+        centerImage();
+        updateStatus();
+    }
+
+    function fitImageToHeight() {
+        const windowHeight = window.innerHeight;
+
+        const imageAspectRatio = viewParams.dimensions.x / viewParams.dimensions.y;
+
+        setImageSize(windowHeight * imageAspectRatio, windowHeight);
+        viewParams.scale = windowHeight / viewParams.dimensions.y;
 
         centerImage();
         updateStatus();
