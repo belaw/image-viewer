@@ -255,7 +255,7 @@
     }
 
     function updateQueryParams() {
-        let queryString = "?image=" + imageUrl;
+        let queryString = "?image=" + encodeURIComponent(imageUrl);
         if (viewParams.position.x !== defaultViewParams.position.x)
             queryString += "&x=" + Math.round(viewParams.position.x).toString();
         if (viewParams.position.y !== defaultViewParams.position.y)
