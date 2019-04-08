@@ -390,6 +390,14 @@
         updateQueryParams();
     }
 
+    function hideMenu() {
+        menuElm.style.display = "none";
+    }
+
+    function showMenu() {
+        menuElm.style.display = "block";
+    }
+
     mainElm.addEventListener("mousedown", function (evt) {
         if (evt.target.parentNode !== menuElm || evt.target !== menuElm) {
             clickFlag = true;
@@ -405,7 +413,22 @@
         updateQueryParams();
     });
 
+    let lastMenuTimeout = null;
+    let mouseIsOverMenu = false;
+
+    menuElm.addEventListener("mouseover", () => {
+        mouseIsOverMenu = true;
+    });
+
+    menuElm.addEventListener("mouseout", () => {
+        mouseIsOverMenu = false;
+    });
+
     window.addEventListener("mousemove", function (evt) {
+        clearTimeout(lastMenuTimeout);
+        showMenu();
+        if (!mouseIsOverMenu)
+            lastMenuTimeout = setTimeout(hideMenu, 1000);
         evt.preventDefault();
         if (clickFlag) {
             const deltaMouse = {
